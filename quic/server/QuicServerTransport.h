@@ -19,6 +19,7 @@
 
 namespace quic {
 
+// QuicServerTransport, 标识着一个特定的 Quic server endpoint.
 class QuicServerTransport
     : public QuicTransportBase,
       public ServerHandshake::HandshakeCallback,

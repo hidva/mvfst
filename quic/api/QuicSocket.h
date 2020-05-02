@@ -760,6 +760,9 @@ class QuicSocket {
    * Inform the transport that there is data to write on a given stream.
    * An app shouldn't mix connection and stream calls to this API
    * Use the Connection call if the app wants to do prioritization.
+   * 
+   * QuicSocket 会在 id 可再次被写入时调用 wcb 回调. 根据 EchoClient 使用来看, 
+   * notifyPendingWriteOnStream 应该是一次性的, 即 wcb 只会被调用一次.
    */
   virtual folly::Expected<folly::Unit, LocalErrorCode>
   notifyPendingWriteOnStream(StreamId id, WriteCallback* wcb) = 0;

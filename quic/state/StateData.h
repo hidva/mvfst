@@ -616,7 +616,7 @@ struct QuicConnectionStateBase : public folly::DelayedDestruction {
   // Original address used by the peer when first establishing the connection.
   folly::SocketAddress originalPeerAddress;
 
-  // Current peer address.
+  // Current peer address. 记得 QUIC 是支持连接迁移的...
   folly::SocketAddress peerAddress;
 
   // Local address. INADDR_ANY if not set.

@@ -34,6 +34,8 @@ enum class CloseState { OPEN, GRACEFUL_CLOSING, CLOSED };
  * 2. Assumes that the sub-class manages its ownership via a shared_ptr.
  *    This is needed in order for QUIC to be able to live beyond the lifetime
  *    of the object that holds it to send graceful close messages to the peer.
+ *    
+ *    所以对 QuicTransportBase 子类的使用要结合 sharedGuard() 一起进行.
  */
 class QuicTransportBase : public QuicSocket {
  public:

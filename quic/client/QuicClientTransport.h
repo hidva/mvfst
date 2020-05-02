@@ -21,6 +21,21 @@ namespace quic {
 
 class ClientHandshakeFactory;
 
+/**
+ * QuicClientTransport 的内存管理; 我理解, QuicClientTransport 应该总是要以 std::shared_ptr 的形式引用
+ * 着. 并且一定要调用 setSelfOwning() 使得 QuicClientTransport 自身也同时引用着自身, 就像 newClient() 的
+ * 做法一样. 所以若 QuicClientTransport 对象是某个类的成员, 那么其存在方式如下:
+ * 
+ * struct X {
+ *  std::shared_ptr<QuicClientTransport> cli_ = QuicClientTransport::newClient();
+ *  ~X() {
+ *      cli_->close();  // 或者其他关闭函数.
+ *  }
+ * };
+ * 
+ * 即在 X 对象析构之后, 其内的 QuicClientTransport 对象实际上仍然存在着的, cli_->close() 调用时, 会开始 QUIC
+ * 连接结束的交互, 仍存活的 QuicClientTransport 对象会在 evb 的调度下完成平滑结束连接, 之后会再析构并释放自己.
+ */
 class QuicClientTransport
     : public QuicTransportBase,
       public folly::AsyncUDPSocket::ReadCallback,
@@ -66,6 +81,8 @@ class QuicClientTransport
   /**
    * Supplies a new peer address to use for the connection. This must be called
    * at least once before start().
+   * 
+   * 在不开启 happyEyeballs 情况下, 该函数多次调用之后只有一次有效.
    */
   void addNewPeerAddress(folly::SocketAddress peerAddress);
   /**

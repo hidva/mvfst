@@ -16,6 +16,8 @@ class QuicUDPSocketFactory {
  public:
   virtual ~QuicUDPSocketFactory() {}
 
+  // Make 参数语义取决于具体的使用场景. 
+  // fd 可能为 -1 标识着一个无效的 fd.
   virtual std::unique_ptr<folly::AsyncUDPSocket> make(
       folly::EventBase* evb,
       int fd) = 0;

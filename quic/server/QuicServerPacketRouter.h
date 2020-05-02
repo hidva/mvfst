@@ -32,10 +32,13 @@ enum class TakeoverProtocolVersion : uint32_t {
   V0 = 0x00000001,
 };
 
+// RoutingData, 目前来看 QuicServerWorker 收到的每一个 packet 都有一个对应的 RoutingData
+// 实例, 该实例内存放着路由 QUIC packet 所需信息.
 struct RoutingData {
-  HeaderForm headerForm;
-  bool isInitial;
-  bool isUsingClientConnId;
+  // 对应 QUIC packet 相关信息.
+  HeaderForm headerForm;  
+  bool isInitial;  // Initial packet
+  bool isUsingClientConnId;  // 表明当前 quic packet 是一个 Initial packet 或者 0-rtt packet.
 
   // The destination connection id is the connection id picked by the
   // server for non initial packets and the sourceConnId is the one chosen
@@ -46,7 +49,7 @@ struct RoutingData {
   folly::Optional<ConnectionId> sourceConnId;
 
   RoutingData(
-      HeaderForm headerFormIn,
+      HeaderForm headerFormIn,  
       bool isInitialIn,
       bool isUsingClientConnIdIn,
       ConnectionId destinationConnIdIn,

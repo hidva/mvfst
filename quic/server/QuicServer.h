@@ -27,6 +27,10 @@
 
 namespace quic {
 
+/**
+ * QuicServer, 负责实现 QUIC server 部分. 参考 'QuicServer 类' 了解该类相关背景. 
+ * 参见 EchoServer.h 了解该类如何使用. 
+ */
 class QuicServer : public QuicServerWorker::WorkerCallback,
                    public std::enable_shared_from_this<QuicServer> {
  public:
@@ -43,9 +47,15 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
 
   // Initialize and start the quic server where the quic server manages
   // the eventbases for workers
+  // address 为监听地址.
+  // maxWorkers 指定了 QuicServerWorker 的数目, 若为 0, 则取当前 CPU 数目. 
   void start(const folly::SocketAddress& address, size_t maxWorkers);
 
   // Initialize quic server worker per evb.
+  // start(address, workers) 会调用该函数来初始化相应的结构.
+  // address, 为监听地址. initialize 应该为 evbs 中每一个 eventbase 初始化对应的 QuicWorkerServer 实例,
+  // useDefaultTransport, 一般为 true. 意味着新建 QuicWorkerServer 实例使用当前 QuicServer 
+  // transportFactory_ 来作为 transport factory.
   void initialize(
       const folly::SocketAddress& address,
       const std::vector<folly::EventBase*>& evbs,
@@ -53,6 +63,7 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
 
   /**
    * start reading from sockets
+   * 此时 QuicServerWorker 都已经完成了相关的初始化工作. 已经准备就绪.
    */
   void start();
 
@@ -201,6 +212,11 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   /**
    * Routes the given data for the given client to the correct worker that may
    * have the state for the connection associated with the given data and client
+   * 
+   * 当 QuicServerWorker 收到不归属自己处理的 packet 时会调用该函数来请求将包发到指定位置.
+   * QuicServerWorker 根据 packet dest connection id 中的 worker id 信息来判断当前包是否是需要自己处理的.
+   * client, routingData, networkData 存放着 packet 相关信息.
+   * isForwardedData 语义与 QuicServerWorker::handleNetworkData() 中同名参数语义相同.
    */
   void routeDataToWorker(
       const folly::SocketAddress& client,
@@ -318,6 +334,10 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   QuicServer();
 
   // helper function to initialize workers
+  // 该函数是 initialize() 一部分. 
+  // 为 evbs 中每一个 evb 都新建并初始化一个 QuicServerWorker.
+  // 并以此来填充 workers_, evbToWorkers_ 字段.
+  // useDefaultTransport 一般为 true.
   void initializeWorkers(
       const std::vector<folly::EventBase*>& evbs,
       bool useDefaultTransport);
@@ -330,6 +350,7 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   // helper method to run the given function in all worker synchronously
   void runOnAllWorkersSync(const std::function<void(QuicServerWorker*)>& func);
 
+  // 进一步初始化每一个 QuicServerWorker. 主要是初始化 QuicServerWorker 中与 socket 有关的字段.
   void bindWorkersToSocket(
       const folly::SocketAddress& address,
       const std::vector<folly::EventBase*>& evbs);
@@ -344,20 +365,33 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   std::atomic<bool> workersInitialized_{false};
   std::condition_variable startCv_;
   std::atomic<bool> takeoverHandlerInitialized_{false};
+  // 所有 QuicServerWorker 所在的 eventbase 列表.
   std::vector<std::unique_ptr<folly::ScopedEventBaseThread>> workerEvbs_;
+  // 存放着当前 QuicServer 中所有的 QuicServerWorker 实例.
   std::vector<std::unique_ptr<QuicServerWorker>> workers_;
   // Thread local pointer to QuicServerWorker. This is useful to avoid
   // looking up the worker to route to.
   // NOTE: QuicServer still maintains ownership of all the workers and manages
   // their destruction
+  // 每一个 QuicServerWorker 在运行时看到的 workerPtr_ 都是自身.
   folly::ThreadLocalPtr<QuicServerWorker> workerPtr_;
+  // evbToWorkers_ 以 hash 形式存放着所有 QuicServerWorker 实例. 
+  // key 为 QuicServerWorker 所在 eventbase, value 为 QuicServerWorker 实例自身.
   folly::F14FastMap<folly::EventBase*, QuicServerWorker*> evbToWorkers_;
+  // 当 QuicServerWorker 收到建链请求时, 会调用 transportFactory_::make(evb, sock, addr) 来创建出对应的实例.
+  // 这里 evb 即当前 QuicServerWorker 所在的 event base.
+  // sock, 便是 socketFactory_::make 返回的对象.
+  // addr, 为客户端的地址.
   std::unique_ptr<QuicServerTransportFactory> transportFactory_;
   folly::F14FastMap<folly::EventBase*, QuicServerTransportFactory*>
       evbToAcceptors_;
   // factory used for workers to create their listening / bound sockets
+  // QuicServerWorker 会使用 listenerSocketFactory_::make(evb, -1) 来创建对应的 listen port.
+  // 这里 evb 便是 QuicServerWorker 所在的 eventbase.
   std::unique_ptr<QuicUDPSocketFactory> listenerSocketFactory_;
   // factory used by workers to create sockets for connection transports
+  // QuicServerWorker 在收到建链请求, 为构造对应的 QuicServerTransport 实例, 会调用 socketFactory_::make(env, listenerFd) 
+  // 相应的 udp socket.
   std::unique_ptr<QuicUDPSocketFactory> socketFactory_;
   // factory used to create specific instance of Congestion control algorithm
   std::shared_ptr<CongestionControllerFactory> ccFactory_;
@@ -365,6 +399,8 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   std::shared_ptr<folly::EventBaseObserver> evbObserver_;
   folly::Optional<std::string> healthCheckToken_;
   // vector of all the listening fds on each quic server worker
+  // 参考 bindWorkersToSocket() 中对 listeningFDs_ 的使用.
+  // 我理解该字段类似于一个 hook, 用来实现更细化的控制.
   std::vector<int> listeningFDs_;
   ProcessId processId_{ProcessId::ZERO};
   uint16_t hostId_{0};
@@ -378,6 +414,7 @@ class QuicServer : public QuicServerWorker::WorkerCallback,
   // Used to override certain transport parameters, given the client address
   TransportSettingsOverrideFn transportSettingsOverrideFn_;
   // address that the server is bound to
+  // 所有 QuicServerWorker 都监听到这个地址. 
   folly::SocketAddress boundAddress_;
   folly::SocketOptionMap socketOptions_;
 };

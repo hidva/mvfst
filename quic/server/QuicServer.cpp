@@ -187,6 +187,8 @@ void QuicServer::bindWorkersToSocket(
     const std::vector<folly::EventBase*>& evbs) {
   auto numWorkers = evbs.size();
   CHECK(!initialized_);
+  // 考虑到 address 中可能未显式指定监听端口(意味着此时用户希望内核随机选择一个端口),
+  // 所以这里总是用第一个 QuicServerWorker bind 之后返回的 address 来重新初始化 boundAddress_.
   boundAddress_ = address;
   for (size_t i = 0; i < numWorkers; ++i) {
     auto workerEvb = evbs[i];

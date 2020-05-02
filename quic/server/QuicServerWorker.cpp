@@ -37,6 +37,7 @@ void QuicServerWorker::bind(const folly::SocketAddress& address) {
   DCHECK(!supportedVersions_.empty());
   CHECK(socket_);
   if (socketOptions_) {
+    // 此时 socket_::fd_ 可能尚未初始化.
     applySocketOptions(
         *socket_.get(),
         *socketOptions_,
@@ -288,7 +289,7 @@ void QuicServerWorker::handleNetworkData(
     uint8_t initialByte = cursor.readBE<uint8_t>();
     HeaderForm headerForm = getHeaderForm(initialByte);
 
-    if (headerForm == HeaderForm::Short) {
+    if (headerForm == HeaderForm::Short) {  // 根据 QUIC 标准, 这时 packet 归属于一个已经建立的链接.
       folly::Expected<ShortHeaderInvariant, TransportErrorCode>
           parsedShortHeader = parseShortHeaderInvariants(initialByte, cursor);
       if (!parsedShortHeader) {
@@ -423,8 +424,9 @@ void QuicServerWorker::forwardNetworkData(
     }
   }
 
+  // 若为 true, 则表明当前 packet 需要转发给同一个 QuicServer 下其他 QuicServerWorker.
   bool userSpacePktRoute;
-  if (routingData.isUsingClientConnId) {
+  if (routingData.isUsingClientConnId) {  // 当前 packet 请求新建一个连接, 所以不需要转发了.
     // no need to route further if it's an initial packet or zero-rtt packet
     userSpacePktRoute = false;
   } else {
@@ -446,7 +448,7 @@ void QuicServerWorker::forwardNetworkData(
           networkData,
           routingData.destinationConnId);
     }
-    if (LIKELY(connIdParam->workerId == workerId_)) {
+    if (LIKELY(connIdParam->workerId == workerId_)) {  // 当前 packet 正好是需要由当前 QuicServerWorker 处理.
       userSpacePktRoute = false;
     } else {
       VLOG(3) << folly::format(
@@ -501,8 +503,9 @@ void QuicServerWorker::dispatchPacketData(
     dropPacket = true;
   }
 
+  // 若为 true 则表明由于某种原因无法新建一个 transport.
   bool cannotMakeTransport = false;
-  if (!dropPacket && !transport) {
+  if (!dropPacket && !transport) {  
     // For LongHeader packets without existing associated connection, try to
     // route with destinationConnId chosen by the peer and IP address of the
     // peer.
@@ -510,6 +513,7 @@ void QuicServerWorker::dispatchPacketData(
     auto source = std::make_pair(client, routingData.destinationConnId);
     auto sit = sourceAddressMap_.find(source);
     if (sit == sourceAddressMap_.end()) {
+      // 此时确实没有找到当前 packet 对应的 transport, 当前 packet 可能是请求创建一个新连接的.  
       // TODO for O-RTT types we need to create new connections to handle
       // the case, where the new server gets packets sent to the old one due
       // to network reordering
@@ -615,6 +619,7 @@ void QuicServerWorker::dispatchPacketData(
     transport->onNetworkData(client, std::move(networkData));
     return;
   }
+  // dropPacket 为 true 丢包.
   if (cannotMakeTransport) {
     VLOG(3)
         << "Dropping packet due to transport factory did not make transport";

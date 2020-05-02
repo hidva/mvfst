@@ -25,6 +25,9 @@
 
 namespace quic {
 
+/**
+ * QuicServerWorker, 参考 'QuicServer 类' 了解该类相关背景. 
+ */ 
 class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
                          public QuicServerTransport::RoutingCallback,
                          public ServerConnectionIdRejector {
@@ -268,6 +271,9 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
 
   void onReadClosed() noexcept override;
 
+  // 当 QuicServerWorker 收到一个归属于自己处理的 QUIC packet 时, 会调用该函数来处理这个 packet.
+  // client, routingData, networkData 存放着 packet 相关信息.
+  // isForwardedData 语义与 handleNetworkData() 中同名参数语义相同.
   void dispatchPacketData(
       const folly::SocketAddress& client,
       RoutingData&& routingData,
@@ -301,6 +307,11 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
   }
 
   // public so that it can be called by tests as well.
+  // 当 QuicServerWorker 收到一个 QUIC packet 时调用该函数.
+  // client 会 quic packet 发送方地址.
+  // receiveTime 为收到包时对应的时间.
+  // isForwardedData, 若为 true, 则表明当前 packet 被转发过来的, 与 packetForwardingEnabled_ 特性有关.
+  // 可以认为 isForwardedData 总是取值为 false.
   void handleNetworkData(
       const folly::SocketAddress& client,
       Buf data,
@@ -315,7 +326,9 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
       const folly::IOBuf& data);
 
   /**
-   * Forward data to the right worker or to the takeover socket
+   * Forward data to the right QuicServerWorker or to the takeover socket.
+   * networkData, routingData, client 存放着待转发 packet 相关信息.
+   * isForwardedData, 与 handleNetworkData() 中同名参数语义相同.
    */
   void forwardNetworkData(
       const folly::SocketAddress& client,
@@ -367,9 +380,12 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
    */
   std::string logRoutingInfo(const ConnectionId& connId) const;
 
+  // 当前 QuicServerWorker 的 listen socket.
   std::unique_ptr<folly::AsyncUDPSocket> socket_;
   folly::SocketOptionMap* socketOptions_{nullptr};
-  std::shared_ptr<WorkerCallback> callback_;
+  // 指向着当前 QuicServerWorker 所属的 QuicServer.
+  std::shared_ptr<WorkerCallback> callback_; 
+  // 当前 QuicServerWorker 所在的 eventbase.
   folly::EventBase* evb_{nullptr};
 
   // factories are owned by quic server
@@ -378,13 +394,18 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
   std::shared_ptr<CongestionControllerFactory> ccFactory_{nullptr};
 
   // A server transport's membership is exclusive to only one of these maps.
+  // connectionIdMap_ 存放着当前 QuicServerWorker 管理的所有 QuicServerTransport,
+  // 此时 key 为 QuicServerTransport connection id.
   ConnIdToTransportMap connectionIdMap_;
+  // 这里 key 为 client address 以及 client connection id. 而不单单是 client address.
+  // 与 connectionIdMap_ 一样, 以另外一种形式存放着所有 connection id.
   SrcToTransportMap sourceAddressMap_;
 
   // Contains every unique transport that is mapped in connectionIdMap_.
   folly::F14FastMap<QuicServerTransport*, std::weak_ptr<QuicServerTransport>>
       boundServerTransports_;
 
+  // 其内存放着 AsyncUDPSocket::ReadCallback::getReadBuffer 所用的缓冲区.
   Buf readBuffer_;
   bool shutdown_{false};
   std::vector<QuicVersion> supportedVersions_;
@@ -405,7 +426,7 @@ class QuicServerWorker : public folly::AsyncUDPSocket::ReadCallback,
   std::unique_ptr<TakeoverHandlerCallback> takeoverCB_;
   enum ProcessId processId_ { ProcessId::ZERO };
   TakeoverPacketHandler takeoverPktHandler_;
-  bool packetForwardingEnabled_{false};
+  bool packetForwardingEnabled_{false};  // 与 takeover 有关,
   using PacketDropReason = QuicTransportStatsCallback::PacketDropReason;
   TimerHighRes::SharedPtr pacingTimer_;
 
